@@ -2,6 +2,7 @@ import re
 import logging
 import requests
 from time import time
+from gpt import conversation
 from threading import Thread
 from datetime import datetime
 from dostoevsky.tokenization import RegexTokenizer
@@ -17,7 +18,16 @@ logger = logging.getLogger(__name__)
 
 
 def start(update, context):
-    update.effective_chat.send_message('Привет. Я бот, который может говорить погоду в Москве и Санкт-Петербурге (если вы спросите текстом) или погоду в вашем текущем местоположении (вам нужно отправить координаты). Напишите мне что-нибудь.')
+    greeting_message = 'Привет. Я бот, который может говорить погоду в Москве и Санкт-Петербурге (если вы спросите текстом) или погоду в вашем текущем местоположении (вам нужно отправить координаты). Напишите мне что-нибудь.'
+    update.effective_chat.send_message(greeting_message)
+    user_data = context.user_data
+    if update.effective_message and update.effective_message.text:
+        user_data['history'] = 'Сообщение: ' + update.effective_message.text + '\n'
+        user_data['history'] += 'Ответ: ' + greeting_message + '\n'
+    else:
+        user_data['history'] = 'Сообщение: Привет.\n'
+        user_data['history'] += 'Ответ: ' + greeting_message + '\n'
+
     return CONVERSATION
 
 
@@ -25,8 +35,10 @@ def say_hi(update, context):
     user_data = context.user_data
     if 'last_greeting' in user_data.keys() and time() - user_data['last_greeting'] < 60*60:
         update.effective_chat.send_message('Недавно же здоровались.')
+        user_data['history'] += 'Недавно же здоровались.\n'
     else:
         update.effective_chat.send_message('Привет-привет.')
+        user_data['history'] += 'Привет-привет.\n'
         user_data['last_greeting'] = time()
 
     return CONVERSATION
@@ -37,6 +49,7 @@ def end_conversation(update, context):
     update.effective_chat.send_message('До свидания.')
     user_data = context.user_data
     user_data.clear()
+
     return ConversationHandler.END
 
 
@@ -53,6 +66,9 @@ def print_weather(update, context, weather=None, city_id=0, use_old=False, locat
 
 
 def get_weather(update, context, city_id=0, location=False):
+    user_data = context.user_data
+    user_data['history'] += '*погода*\n'
+
     if location:
         pos = (update.effective_message.location.latitude, update.effective_message.location.longitude)
         ans = requests.get('http://api.openweathermap.org/data/2.5/forecast',
@@ -102,6 +118,7 @@ def spell_check(text):
 
 def user_message(update, context):
     print('{}: new user message'.format(datetime.now()))
+    user_data = context.user_data
 
     if not update.effective_message or not update.effective_message.text:
         if update.effective_message.location:
@@ -114,6 +131,7 @@ def user_message(update, context):
         text = update.effective_message.text
         text = text.lower()
         text = spell_check(text)
+        user_data['history'] += 'Сообщение: ' + text + '\n' + 'Ответ: '
 
     tokenizer = RegexTokenizer()
     model = FastTextSocialNetworkModel(tokenizer=tokenizer)
@@ -121,6 +139,7 @@ def user_message(update, context):
 
     if 'negative' in sentiment[0].keys() and sentiment[0]['negative'] > 0.3:
         update.effective_chat.send_message('Попробуйте быть повежливее.')
+        user_data['history'] += 'Попробуйте быть повежливее.\n'
     elif re.search(r'(^|\s)погод(а|у)(\s|\,\s|\.|\?|\!|$)', text):
         msc = re.search(r'(\s|^)мск(\s|\,\s|\.|\?|\!|$)|(\s|^)москв(а|е)(\s|\,\s|\.|\?|\!|$)', text)
         spb = re.search(r'(\s|^)спб(\s|\,\s|\.|\?|\!|$)|(\s|^)питер(е|\s|\,\s|\.|\?|\!|$)|(\s|^)петербург(е|\s|\,\s|\.|\?|\!|$)|(\s|^)петроград(е|\s|\,\s|\.|\?|\!|$)|(\s|^)санкт(\s|\-)петербург(е|\s|\,\s|\.|\?|\!|$)', text)
@@ -131,6 +150,7 @@ def user_message(update, context):
             get_weather(update, context, 524901)
         else:
             update.effective_chat.send_message('Не понимаю о чём вы, пишите конкретнее.')
+            user_data['history'] += 'Не понимаю о чём вы, пишите конкретнее.\n'
     elif re.search(r'((\s|^)прив(\,\s|\.|\!|\s|$|ет*)|((\s|^)зд(о|а)ров(\,\s|\.|\!|\s|$|о|а|енько))|(здравствуй(\,\s|\.|\!|\s|$|те))|((\s|^)добр(ый\s|ое\s|ой\s|ого\s)(день|ночи|дня|утро|времени)))', text):
         # "здорово у тебя получается"
         # цитаты с приветствием
@@ -139,8 +159,11 @@ def user_message(update, context):
         # "покажет"
         return end_conversation(update, context)
     else:
-        # прикрутить gpt?
         update.effective_chat.send_message('Я не понимаю, о чём вы говорите.')
+        # update.effective_chat.send_message('Подождите примерно 30 секунд, пока я сгенерирую ответ.')
+        # ans = conversation(user_data['history'])
+        # update.effective_chat.send_message(ans)
+        # user_data['history'] += ans + '\n'
 
     return CONVERSATION
 
