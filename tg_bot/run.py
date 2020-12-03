@@ -55,7 +55,7 @@ def print_weather(update, context, weather=None, city_id=0, use_old=False, locat
 def get_weather(update, context, city_id=0, location=False):
     if location:
         pos = (update.effective_message.location.latitude, update.effective_message.location.longitude)
-        ans = requests.get("http://api.openweathermap.org/data/2.5/forecast",
+        ans = requests.get('http://api.openweathermap.org/data/2.5/forecast',
                            params={'lat': pos[0], 'lon': pos[1], 'cnt': 24, 'units': 'metric', 'lang': 'ru', 'appid': WEATHER_TOKEN})
         weather = ans.json()
         if weather['cod'] == '200':
@@ -69,7 +69,7 @@ def get_weather(update, context, city_id=0, location=False):
     if city_id in bot_data.keys() and time() - bot_data[city_id][0]['dt'] < 0:
         print_weather(update, context, city_id=city_id, use_old=True)
     else:
-        ans = requests.get("http://api.openweathermap.org/data/2.5/forecast",
+        ans = requests.get('http://api.openweathermap.org/data/2.5/forecast',
                            params={'id': city_id, 'cnt': 24, 'units': 'metric', 'lang': 'ru', 'appid': WEATHER_TOKEN})
         weather = ans.json()
         if weather['cod'] == '200':
@@ -77,6 +77,27 @@ def get_weather(update, context, city_id=0, location=False):
             print_weather(update, context, bot_data[city_id], city_id)
         else:
             update.effective_chat.send_message('Что-то не так с сервером погоды, попробуйте спросить меня позже.')
+
+
+def spell_check(text):
+    ans = requests.get('https://speller.yandex.net/services/spellservice.json/checkText',
+                       params={'text': text, 'options': 512})
+    if ans.status_code != 200:
+        print('Что-то с сервером проверки правописания, возвращаю без проверки.')
+        return text
+
+    correction = ans.json()
+    if correction:
+        for d in correction:
+            if d['code'] == 1:
+                text = ''.join((text[:d['pos']], d['s'][0], text[d['pos']+d['len']:]))
+            elif d['code'] == 2:
+                pass
+                # повтор слов почему-то не работает на стороне яндекса
+            else:
+                print('Слишком много ошибок.')
+
+    return text
 
 
 def user_message(update, context):
@@ -92,6 +113,7 @@ def user_message(update, context):
     else:
         text = update.effective_message.text
         text = text.lower()
+        text = spell_check(text)
 
     tokenizer = RegexTokenizer()
     model = FastTextSocialNetworkModel(tokenizer=tokenizer)
@@ -100,7 +122,6 @@ def user_message(update, context):
     if 'negative' in sentiment[0].keys() and sentiment[0]['negative'] > 0.3:
         update.effective_chat.send_message('Попробуйте быть повежливее.')
     elif re.search(r'(^|\s)погод(а|у)(\s|\,\s|\.|\?|\!|$)', text):
-        # почистить текст перед регекспом?
         msc = re.search(r'(\s|^)мск(\s|\,\s|\.|\?|\!|$)|(\s|^)москв(а|е)(\s|\,\s|\.|\?|\!|$)', text)
         spb = re.search(r'(\s|^)спб(\s|\,\s|\.|\?|\!|$)|(\s|^)питер(е|\s|\,\s|\.|\?|\!|$)|(\s|^)петербург(е|\s|\,\s|\.|\?|\!|$)|(\s|^)петроград(е|\s|\,\s|\.|\?|\!|$)|(\s|^)санкт(\s|\-)петербург(е|\s|\,\s|\.|\?|\!|$)', text)
         # "какая сегодня погода на улицах питерА/москвЫ?"
