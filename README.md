@@ -10,3 +10,5 @@ LDA+tSNE.ipynb - clustering and plotting
 get_texts.py - same
 
 nlp_course.ipynb - normalization, BOW and LSI with numpy
+
+tg_bot/run.py - simple weather bot
